@@ -11,7 +11,8 @@
       "Bash(kill 48038:*)",
       "Bash(lsof:*)",
       "Bash(kill:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(pkill -f \"next dev\")"
     ]
   }
 }

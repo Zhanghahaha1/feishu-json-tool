@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Settings, X, FileJson, Send, Check } from "lucide-react"
+import axios from 'axios'
+import { toast } from "sonner"
 
 export default function JsonToFeishuPage() {
   const [isConfigured, setIsConfigured] = useState(false)
@@ -11,20 +13,29 @@ export default function JsonToFeishuPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const [successLink, setSuccessLink] = useState("")
 
   // 临时存储设置弹窗中的值
   const [tempAppId, setTempAppId] = useState("")
   const [tempAppSecret, setTempAppSecret] = useState("")
+  // 验证状态
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [verifyError, setVerifyError] = useState("")
 
   useEffect(() => {
-    // 从 localStorage 读取已保存的配置
-    const savedAppId = localStorage.getItem("feishu_app_id")
-    const savedAppSecret = localStorage.getItem("feishu_app_secret")
-    if (savedAppId && savedAppSecret) {
-      setAppId(savedAppId)
-      setAppSecret(savedAppSecret)
-      setIsConfigured(true)
-    }
+    // 注释掉原有逻辑，强制显示配置页面
+    // const savedAppId = localStorage.getItem("feishu_app_id")
+    // const savedAppSecret = localStorage.getItem("feishu_app_secret")
+    // if (savedAppId && savedAppSecret) {
+    //   setAppId(savedAppId)
+    //   setAppSecret(savedAppSecret)
+    //   setIsConfigured(true)
+    // }
+
+    // 新增：清除所有凭证
+    localStorage.clear()
+    setIsConfigured(false)
   }, [])
 
   const handleInitialSubmit = () => {
@@ -35,15 +46,49 @@ export default function JsonToFeishuPage() {
     }
   }
 
-  const handleSettingsReset = () => {
-    if (tempAppId.trim() && tempAppSecret.trim()) {
-      setAppId(tempAppId)
-      setAppSecret(tempAppSecret)
-      localStorage.setItem("feishu_app_id", tempAppId)
-      localStorage.setItem("feishu_app_secret", tempAppSecret)
-      setShowSettings(false)
-      setTempAppId("")
-      setTempAppSecret("")
+  const handleSettingsReset = async () => {
+    if (!tempAppId.trim() || !tempAppSecret.trim()) {
+      return
+    }
+
+    // 重置验证错误
+    setVerifyError("")
+    setIsVerifying(true)
+
+    try {
+      console.log(">>> 开始验证飞书凭证...")
+
+      // 调用验证接口
+      const res = await axios.post('/api/verify', {
+        appId: tempAppId,
+        appSecret: tempAppSecret
+      })
+
+      if (res.data.success) {
+        console.log(">>> 凭证验证成功，保存配置")
+        // 验证成功，保存配置并关闭弹窗
+        setAppId(tempAppId)
+        setAppSecret(tempAppSecret)
+        localStorage.setItem("feishu_app_id", tempAppId)
+        localStorage.setItem("feishu_app_secret", tempAppSecret)
+        localStorage.setItem('feishu_creds', JSON.stringify({ appId: tempAppId, appSecret: tempAppSecret }))
+        setShowSettings(false)
+        setTempAppId("")
+        setTempAppSecret("")
+        // 可以在这里添加成功Toast，但UI已存档，暂用alert
+        toast.success("凭证验证成功，配置已保存")
+      } else {
+        throw new Error(res.data.error || "凭证验证失败")
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.error || err.message || "验证请求失败"
+      console.error(">>> 凭证验证失败:", msg)
+      // 显示错误Toast，暂用alert
+      toast.error("凭证验证失败: " + msg)
+      setVerifyError(msg)
+      // 验证失败，保持弹窗打开
+    } finally {
+      setIsVerifying(false)
     }
   }
 
@@ -54,32 +99,77 @@ export default function JsonToFeishuPage() {
   }
 
   const handleJsonSubmit = async () => {
-    if (!jsonContent.trim()) return
+    // 1. 立即重置所有状态，防止 UI 卡死
+    setIsSubmitting(true);
+    setShowSuccess(false);
+    setErrorMessage("");
 
-    setIsSubmitting(true)
+    console.log(">>> 开始执行真实的 Axios 请求");
+    localStorage.removeItem('feishu_creds');
+
+    if (!jsonContent.trim()) {
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const response = await fetch('/api/feishu', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appId,
-          appSecret,
-          json: jsonContent,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('请求失败')
+      // 解析JSON内容
+      let parsedData;
+      try {
+        parsedData = JSON.parse(jsonContent);
+      } catch (parseError) {
+        throw new Error("JSON格式无效");
       }
 
-      setShowSuccess(true)
-      setTimeout(() => setShowSuccess(false), 2000)
-    } catch (error) {
-      console.error('提交失败:', error)
+      // 提取必要字段
+      const title = parsedData.title || "未命名文档";
+      const folderToken = parsedData.folderToken || "";
+
+      // 处理内容：优先使用blocks，其次使用content
+      let blocks = parsedData.blocks;
+      if (!blocks && parsedData.content) {
+        // 将纯文本内容转换为简单的blocks格式
+        blocks = [
+          {
+            type: "text",
+            content: parsedData.content
+          }
+        ];
+      }
+
+      if (!blocks || !Array.isArray(blocks)) {
+        throw new Error("JSON必须包含有效的blocks数组或content字段");
+      }
+
+      // 2. 从本地缓存获取最新的凭证（防止 State 没更新）
+      const savedCreds = JSON.parse(localStorage.getItem('feishu_creds') || '{}');
+      const finalAppId = appId || savedCreds.appId;
+      const finalAppSecret = appSecret || savedCreds.appSecret;
+
+      const res = await axios.post('/api/feishu', {
+        appId: finalAppId,
+        appSecret: finalAppSecret,
+        folderToken,
+        title,
+        blocks
+      });
+
+      if (res.data.success) {
+        setShowSuccess(true); // 只有后端返回成功，才准显示“转换成功”
+        const documentUrl = res.data.data?.documentUrl || res.data.documentUrl;
+        if (documentUrl) {
+          setSuccessLink(documentUrl);
+        }
+      } else {
+        throw new Error(res.data.error || "未知错误");
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || "请求失败";
+      console.error(">>> 物理报错:", msg);
+      alert("转换失败: " + msg); // 失败必须弹窗告知
+      setShowSuccess(false); // 失败必须切回原始按钮状态
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
   }
 
@@ -221,6 +311,32 @@ export default function JsonToFeishuPage() {
             )}
           </button>
 
+          {/* 错误信息 */}
+          {errorMessage && (
+            <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive-foreground">
+                {errorMessage}
+              </p>
+            </div>
+          )}
+
+          {/* 成功链接 */}
+          {successLink && (
+            <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+              <p className="text-sm text-green-600 dark:text-green-400">
+                文档创建成功！
+                <a
+                  href={successLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 underline hover:opacity-80"
+                >
+                  点击查看文档
+                </a>
+              </p>
+            </div>
+          )}
+
           {/* 底部提示 */}
           <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground pt-4">
             <div className="flex items-center gap-2">
@@ -289,6 +405,16 @@ export default function JsonToFeishuPage() {
               </div>
             </div>
 
+            {/* 验证错误提示 */}
+            {verifyError && (
+              <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+                <p className="text-sm text-destructive-foreground">
+                  <span className="font-medium">凭证验证失败: </span>
+                  {verifyError}
+                </p>
+              </div>
+            )}
+
             {/* 按钮组 */}
             <div className="flex gap-3">
               <button
@@ -299,10 +425,17 @@ export default function JsonToFeishuPage() {
               </button>
               <button
                 onClick={handleSettingsReset}
-                disabled={!tempAppId.trim() || !tempAppSecret.trim()}
-                className="flex-1 h-11 rounded-xl bg-gradient-to-r from-foreground to-foreground/90 text-background font-medium text-sm transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={!tempAppId.trim() || !tempAppSecret.trim() || isVerifying}
+                className="flex-1 h-11 rounded-xl bg-gradient-to-r from-foreground to-foreground/90 text-background font-medium text-sm transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                保存更改
+                {isVerifying ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                    <span>验证中...</span>
+                  </>
+                ) : (
+                  "保存更改"
+                )}
               </button>
             </div>
           </div>

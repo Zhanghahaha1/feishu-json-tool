@@ -1,17 +1,47 @@
-## 核心任务：从 v0-reference 物理还原 UI 且 严禁使用模拟逻辑
+## 核心任务：彻底修复 Axios 逻辑闭环与 UI 状态同步
 
-### 1. 样式系统强制覆盖
-- **必须读取**：`v0-reference/styles/globals.css` -> **全量覆盖**到 `app/globals.css`。
-- **必须读取**：`v0-reference/tailwind.config.mjs` -> **全量覆盖**内容到 `tailwind.config.ts`。
-- **注意**：不要说找不到文件，文件就在 v0-reference 文件夹里。
+### 1. 物理重写 handleJsonSubmit 函数
+- **必须执行**：在 `app/page.tsx` 中找到 `handleJsonSubmit` 函数，用以下逻辑彻底覆盖：
+```typescript
+const handleJsonSubmit = async () => {
+  // 1. 立即重置所有状态，防止 UI 卡死
+  setIsSubmitting(true);
+  setShowSuccess(false); 
+  setErrorMessage("");
 
-### 2. UI 与 真实逻辑 还原
-- **必须读取**：`v0-reference/app/page.tsx` -> **覆盖**到 `app/page.tsx`。
-- **逻辑锁死**：覆盖后，检查 `handleSubmit` 函数。**严禁使用任何 Mock（模拟）代码**。必须确保它在调用 `fetch('/api/feishu', ...)`。
+  console.log(">>> 开始执行真实的 Axios 请求");
 
-### 3. 禁令
-- **严禁改名**：绝对不准修改 `v0-reference` 文件夹的名字。
-- **严禁发挥**：除了还原 UI，不要添加任何你觉得“好”的功能（如空间 ID）。
+  try {
+    // 2. 从本地缓存获取最新的凭证（防止 State 没更新）
+    const savedCreds = JSON.parse(localStorage.getItem('feishu_creds') || '{}');
+    const finalAppId = appId || savedCreds.appId;
+    const finalAppSecret = appSecret || savedCreds.appSecret;
 
-### 4. 执行
-- 完成后运行 `npm run dev`。
+    const res = await axios.post('/api/feishu', {
+      appId: finalAppId,
+      appSecret: finalAppSecret,
+      folderToken,
+      title,
+      blocks: jsonOutput
+    });
+
+    if (res.data.success) {
+      setShowSuccess(true); // 只有后端返回成功，才准显示“转换成功”
+      setSuccessLink(res.data.url);
+    } else {
+      throw new Error(res.data.error || "未知错误");
+    }
+  } catch (err: any) {
+    const msg = err.response?.data?.error || err.message || "请求失败";
+    console.error(">>> 物理报错:", msg);
+    alert("转换失败: " + msg); // 失败必须弹窗告知
+    setShowSuccess(false); // 失败必须切回原始按钮状态
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+禁止事项：
+严禁修改 CSS：保留现在的样式。
+
+严禁模拟跳转：必须严格判断 res.data.success
