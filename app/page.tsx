@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { Settings, X, FileJson, Send, Check } from "lucide-react"
-import axios from "axios"
 
 export default function JsonToFeishuPage() {
   const [isConfigured, setIsConfigured] = useState(false)
@@ -58,46 +57,27 @@ export default function JsonToFeishuPage() {
     if (!jsonContent.trim()) return
 
     setIsSubmitting(true)
-
     try {
-      // 调用飞书 API
-      const response = await axios.post('/api/feishu', {
-        appId,
-        appSecret,
-        jsonData: jsonContent
+      const response = await fetch('/api/feishu', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          appId,
+          appSecret,
+          json: jsonContent,
+        }),
       })
 
-      if (response.data.success) {
-        setShowSuccess(true)
-        console.log('文档创建成功:', response.data.data)
-
-        // 显示成功消息 3 秒
-        setTimeout(() => setShowSuccess(false), 3000)
-      } else {
-        throw new Error(response.data.error || '未知错误')
-      }
-    } catch (error: any) {
-      console.error('创建文档失败:', error)
-
-      let errorMessage = error.message || '请检查您的凭证和网络连接'
-
-      // 尝试提取响应中的错误详情
-      if (error.response?.data) {
-        const errorData = error.response.data
-        console.log('API 错误详情:', errorData)
-
-        if (errorData.error) {
-          errorMessage = `错误: ${errorData.error}`
-          if (errorData.message) {
-            errorMessage += ` - ${errorData.message}`
-          }
-          if (errorData.details) {
-            errorMessage += `\n详情: ${JSON.stringify(errorData.details)}`
-          }
-        }
+      if (!response.ok) {
+        throw new Error('请求失败')
       }
 
-      alert(`创建文档失败:\n${errorMessage}`)
+      setShowSuccess(true)
+      setTimeout(() => setShowSuccess(false), 2000)
+    } catch (error) {
+      console.error('提交失败:', error)
     } finally {
       setIsSubmitting(false)
     }
@@ -213,7 +193,7 @@ export default function JsonToFeishuPage() {
               className="w-full h-96 p-6 rounded-2xl bg-card border border-border text-foreground font-mono text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 transition-all resize-none"
               spellCheck={false}
             />
-
+            
             {/* JSON 行数指示器 */}
             <div className="absolute top-4 right-4 px-3 py-1 rounded-lg bg-muted text-xs text-muted-foreground">
               {jsonContent.split("\n").length} 行
@@ -255,11 +235,11 @@ export default function JsonToFeishuPage() {
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* 背景遮罩 */}
-          <div
+          <div 
             className="absolute inset-0 bg-foreground/20 backdrop-blur-sm"
             onClick={() => setShowSettings(false)}
           />
-
+          
           {/* 弹窗内容 */}
           <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 space-y-6">
             {/* 关闭按钮 */}

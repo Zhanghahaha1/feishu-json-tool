@@ -1,12 +1,17 @@
-## 核心任务
-将 `reference_ui.txt` 转化为 Next.js 页面，并对接飞书 API。
+## 核心任务：从 v0-reference 物理还原 UI 且 严禁使用模拟逻辑
 
-## 硬性约束
-1. **UI 锁定**：必须 100% 还原 reference_ui.txt 的布局。禁止添加任何输入框（如 Space ID）。
-2. **API 规范**：后端接口只能使用 docx.v1.document 路径。
-3. **保留文件**：任务完成后，禁止删除 reference_ui.txt 和 task.md。
+### 1. 样式系统强制覆盖
+- **必须读取**：`v0-reference/styles/globals.css` -> **全量覆盖**到 `app/globals.css`。
+- **必须读取**：`v0-reference/tailwind.config.mjs` -> **全量覆盖**内容到 `tailwind.config.ts`。
+- **注意**：不要说找不到文件，文件就在 v0-reference 文件夹里。
 
-## 执行步骤
-1. 覆盖 app/page.tsx。
-2. 重写 app/api/feishu/route.ts（使用我给你的那段标准代码）。
-3. 安装必要依赖（axios, lucide-react）。
+### 2. UI 与 真实逻辑 还原
+- **必须读取**：`v0-reference/app/page.tsx` -> **覆盖**到 `app/page.tsx`。
+- **逻辑锁死**：覆盖后，检查 `handleSubmit` 函数。**严禁使用任何 Mock（模拟）代码**。必须确保它在调用 `fetch('/api/feishu', ...)`。
+
+### 3. 禁令
+- **严禁改名**：绝对不准修改 `v0-reference` 文件夹的名字。
+- **严禁发挥**：除了还原 UI，不要添加任何你觉得“好”的功能（如空间 ID）。
+
+### 4. 执行
+- 完成后运行 `npm run dev`。
