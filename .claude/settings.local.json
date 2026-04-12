@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(pkill -f \"next\")",
+      "Bash(curl -s http://localhost:3000/api/feishu)",
+      "Bash(ls -la *.txt *.md)",
+      "Bash(curl:*)",
+      "Bash(kill 48038:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
