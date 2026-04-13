@@ -1,0 +1,49 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [ main ]
+  # Uncomment the following lines to enable manual deployment
+  # workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build project
+      run: npm run build
+
+    - name: Deploy to Vercel
+      env:
+        VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      run: |
+        # Install Vercel CLI
+        npm i -g vercel@latest
+
+        # Deploy to Vercel
+        if [ -n "$VERCEL_TOKEN" ]; then
+          echo "Deploying to Vercel..."
+          vercel --token $VERCEL_TOKEN --prod --yes
+        else
+          echo "VERCEL_TOKEN not set. Skipping deployment."
+          echo "To enable Vercel deployment:"
+          echo "1. Go to https://vercel.com/account/tokens"
+          echo "2. Create a new token"
+          echo "3. Add it to your GitHub repository secrets as VERCEL_TOKEN"
+          echo "4. Also add VERCEL_PROJECT_ID and VERCEL_ORG_ID if needed"
+        fi
