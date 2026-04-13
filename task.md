@@ -1,18 +1,48 @@
-## 核心任务：实现输入状态持久化并修复文件夹报错
+## 核心任务：构建完美的富文本映射引擎并修复“假成功”漏洞
 
-### 1. 前端：输入状态持久化，防止刷新清空 (app/page.tsx)
-- **现状体验极差**：用户一旦刷新网页（F5），之前填入的 App ID 和 App Secret 就会从输入框中消失。
-- **强制修复**：
-  - 在前端组件中引入 `useEffect`。
-  - 在组件初次加载时（`[]` 依赖），立即从 `localStorage.getItem('feishu_creds')` 中读取保存的数据。
-  - 将读取到的 `appId`、`appSecret`、`folderToken` 自动注入到对应的 State 中（如 `setAppId`），让输入框在刷新后依然保留用户上次填写的内容。
+### 1. 致命 Bug：掩盖 Step 2 报错
+- **现状**：Step 2 (批量插入 Blocks) 调用飞书 `/children` 接口时，由于结构不符合飞书要求，飞书实际上返回了错误。但后端代码忽略了该错误，直接给前端返回了成功，导致生成了大量只有标题的空文档！
+- **强制修复**：在 Step 2 的 fetch 响应后，**必须**加入以下严格的校验代码：
+  ```javascript
+  const insertData = await insertRes.json();
+  if (insertData.code !== 0) {
+    throw new Error(`【飞书 API 拒绝插入内容】错误码: ${insertData.code}, 原因: ${insertData.msg}`);
+  }
 
-### 2. 后端：剥离无效的 folderToken (app/api/feishu/route.ts)
-- **致命 Bug 定位**：飞书报 `400 folder not found (1770039)`，是因为前端传了空字符串或无效的 `folderToken`，而后端直接将其带入了发给飞书的 payload 中。
-- **强制修复**：
-  - 在组装调用飞书“创建文档 API”的请求体（Request Body / Payload）时，必须进行动态判断。
-  - **只有当 `folderToken` 存在且不为空字符串时**，才向请求体中加入 `folder_token` 字段。
-  - 如果 `folderToken` 为空，**绝对不要**在请求体中携带 `folder_token` 字段（让飞书默认创建在应用的根目录下）。
+  2. 完美富文本映射 (禁止降级！)
+必须重写 normalizeBlock 函数，严格按照飞书官方格式输出，保留所有排版，绝不降级为纯文本。
 
-### 3. 禁止事项
-- 严禁修改现有的 UI 样式和 JSON 到 Block 的转换核心逻辑。
+请直接复制并使用以下 normalizeBlock 逻辑（我已经为你写好了最标准的飞书 AST 字典）：
+function normalizeBlock(block) {
+  const content = block.text || block.content || '';
+  // 飞书底层标准 text_run 结构
+  const baseElements = [{ "text_run": { "content": content } }];
+
+  switch (block.type) {
+    case 'heading1':
+    case 'h1':
+      return { "block_type": 3, "heading1": { "elements": baseElements } };
+    case 'heading2':
+    case 'h2':
+      return { "block_type": 4, "heading2": { "elements": baseElements } };
+    case 'heading3':
+    case 'h3':
+      return { "block_type": 5, "heading3": { "elements": baseElements } };
+    case 'bullet':
+      return { "block_type": 12, "bullet": { "elements": baseElements } };
+    case 'quote':
+      return { "block_type": 15, "quote": { "elements": baseElements } };
+    case 'code':
+      return { "block_type": 14, "code": { "elements": baseElements } };
+    case 'text':
+    case 'paragraph':
+    default:
+      // 未知格式兜底为正文，但内容绝不丢失
+      return { "block_type": 2, "text": { "elements": baseElements } };
+  }
+}
+
+3. 禁止事项
+严禁忽略飞书的内部 code 报错。
+
+严禁修改前端 app/page.tsx。

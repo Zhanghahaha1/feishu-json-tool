@@ -7,40 +7,12 @@ const FEISHU_BASE_URL = 'https://open.feishu.cn/open-apis';
 function convertToFeishuBlocks(content: any): any[] {
   // 处理null或undefined内容
   if (content == null) {
-    return [
-      {
-        "type": "paragraph",
-        "paragraph": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": "空内容"
-              }
-            }
-          ]
-        }
-      }
-    ];
+    return [normalizeBlock({ type: "text", content: "空内容" })];
   }
 
   // 如果content是字符串，转换为简单的段落
   if (typeof content === 'string') {
-    return [
-      {
-        "type": "paragraph",
-        "paragraph": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": content
-              }
-            }
-          ]
-        }
-      }
-    ];
+    return [normalizeBlock({ type: "text", content })];
   }
 
   // 如果content是数组，假设已经是blocks结构，但需要验证格式
@@ -58,39 +30,11 @@ function convertToFeishuBlocks(content: any): any[] {
     }
 
     // 否则将整个对象作为JSON字符串显示
-    return [
-      {
-        "type": "paragraph",
-        "paragraph": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": JSON.stringify(content, null, 2)
-              }
-            }
-          ]
-        }
-      }
-    ];
+    return [normalizeBlock({ type: "text", content: JSON.stringify(content, null, 2) })];
   }
 
   // 默认情况
-  return [
-    {
-      "type": "paragraph",
-      "paragraph": {
-        "elements": [
-          {
-            "type": "textRun",
-            "textRun": {
-              "content": String(content)
-            }
-          }
-        ]
-      }
-    }
-  ];
+  return [normalizeBlock({ type: "text", content: String(content) })];
 }
 
 // 规范化block结构，确保符合飞书API要求
@@ -98,12 +42,11 @@ function normalizeBlock(block: any): any {
   // 如果block为null或undefined，返回默认段落
   if (block == null) {
     return {
-      "type": "paragraph",
-      "paragraph": {
+      "block_type": 2,
+      "text": {
         "elements": [
           {
-            "type": "textRun",
-            "textRun": {
+            "text_run": {
               "content": "空内容"
             }
           }
@@ -112,129 +55,37 @@ function normalizeBlock(block: any): any {
     };
   }
 
-  // 如果block已经有正确的结构，直接返回
-  if (block.type && (block.paragraph || block.bullet || block.quote || block.heading || block.code || block.todo || block.image || block.link || block.divider || block.file || block.grid || block.table || block.embedded_page || block.iframe || block.sheet || block.bitable || block.diagram || block.jira || block.mindnote || block.poll || block.slides || block.widget)) {
+  // 如果block已经有正确的结构（有block_type字段），直接返回
+  if (typeof block.block_type === 'number') {
     return block;
   }
 
-  // 根据type字段规范化block
-  const type = String(block?.type || 'paragraph');
-  const text = block?.text || block?.content || JSON.stringify(block, null, 2);
+  const content = block.text || block.content || '';
+  // 飞书底层标准 text_run 结构
+  const baseElements = [{ "text_run": { "content": content } }];
 
-  switch (type.toLowerCase()) {
-    case 'paragraph':
-      return {
-        "type": "paragraph",
-        "paragraph": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": text
-              }
-            }
-          ]
-        }
-      };
-
-    case 'bullet':
-    case 'bullet_list':
-    case 'unordered_list':
-      return {
-        "type": "bullet",
-        "bullet": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": text
-              }
-            }
-          ]
-        }
-      };
-
-    case 'quote':
-    case 'blockquote':
-      return {
-        "type": "quote",
-        "quote": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": text
-              }
-            }
-          ]
-        }
-      };
-
-    case 'heading':
-    case 'h1':
-    case 'h2':
-    case 'h3':
-    case 'h4':
-    case 'h5':
-    case 'h6':
+  const type = block?.type || 'text';
+  switch (type) {
     case 'heading1':
+    case 'h1':
+      return { "block_type": 3, "heading1": { "elements": baseElements } };
     case 'heading2':
+    case 'h2':
+      return { "block_type": 4, "heading2": { "elements": baseElements } };
     case 'heading3':
-    case 'heading4':
-    case 'heading5':
-    case 'heading6':
-      let level = 1;
-      if (type.startsWith('h') && type?.length === 2) {
-        level = parseInt(type[1]);
-      } else if (type.startsWith('heading') && type?.length === 8) {
-        level = parseInt(type[7]);
-      }
-      return {
-        "type": "heading",
-        "heading": {
-          "level": level,
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": text
-              }
-            }
-          ]
-        }
-      };
-
+    case 'h3':
+      return { "block_type": 5, "heading3": { "elements": baseElements } };
+    case 'bullet':
+      return { "block_type": 12, "bullet": { "elements": baseElements } };
+    case 'quote':
+      return { "block_type": 15, "quote": { "elements": baseElements } };
+    case 'code':
+      return { "block_type": 14, "code": { "elements": baseElements } };
     case 'text':
-      // text类型映射到paragraph
-      return {
-        "type": "paragraph",
-        "paragraph": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": text
-              }
-            }
-          ]
-        }
-      };
-
+    case 'paragraph':
     default:
-      // 默认作为段落处理
-      return {
-        "type": "paragraph",
-        "paragraph": {
-          "elements": [
-            {
-              "type": "textRun",
-              "textRun": {
-                "content": text
-              }
-            }
-          ]
-        }
-      };
+      // 未知格式兜底为正文，但内容绝不丢失
+      return { "block_type": 2, "text": { "elements": baseElements } };
   }
 }
 
@@ -298,12 +149,12 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
     // 转换内容为飞书blocks
     const elements = convertToFeishuBlocks(content);
 
-    // 创建文档请求体
+    // 创建文档请求体（先创建空文档，不传入内容）
     const createPayload: any = {
       title: title,
       body: {
         locale: "zh_cn",
-        elements: elements
+        elements: [] // 空内容，后续通过插入接口添加
       }
     };
 
@@ -312,7 +163,7 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
       createPayload.folder_token = spaceId;
     }
 
-    console.log('发送给飞书的payload:', JSON.stringify(createPayload, null, 2));
+    console.log('Step 1 - 创建空文档 payload:', JSON.stringify(createPayload, null, 2));
 
     // 使用 docx.v1.document 接口创建文档
     const createResponse = await fetch(`${FEISHU_BASE_URL}/docx/v1/documents`, {
@@ -347,7 +198,7 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
     }
 
     const createData = await createResponse.json();
-    console.log('创建文档响应:', createData);
+    console.log('Step 1 - 创建文档响应:', createData);
 
     if (createData.code !== 0) {
       throw new Error(`飞书 API 错误: ${createData.msg}`);
@@ -362,12 +213,63 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
     const documentId = document.document_id;
     const documentToken = document.document_id; // 注意：document_id 可能不是 token，但暂时使用
 
+    console.log(`Step 2 - 准备插入 ${elements.length} 个 blocks 到文档 ${documentId}`);
+
+    // Step 2: 批量插入 blocks 到文档
+    // 飞书官方正确接口: POST /docx/v1/documents/{documentId}/blocks/{blockId}/children
+    // 文档的根 block ID 就是 documentId 本身
+    const blockId = documentId; // 文档根节点
+    const insertPayload = {
+      children: elements
+    };
+
+    console.log('Step 2 - 插入 blocks payload:', JSON.stringify(insertPayload, null, 2));
+
+    const insertRes = await fetch(`${FEISHU_BASE_URL}/docx/v1/documents/${documentId}/blocks/${blockId}/children`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(insertPayload),
+    });
+
+    if (!insertRes.ok) {
+      const errorText = await insertRes.text();
+      console.error('插入 blocks 失败 - 状态:', insertRes.status, insertRes.statusText, '响应:', errorText);
+
+      let errorMessage = `插入 blocks 失败: ${insertRes.status} ${insertRes.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.msg) {
+          errorMessage += ` - ${errorJson.msg}`;
+        }
+        if (errorJson.code) {
+          errorMessage += ` (错误码: ${errorJson.code})`;
+        }
+      } catch {
+        // 如果不是JSON，使用原始文本
+        if (errorText) {
+          errorMessage += ` - ${errorText.substring(0, 200)}`;
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    const insertData = await insertRes.json();
+    console.log('Step 2 - 插入 blocks 响应:', insertData);
+
+    // 严格的 error.code !== 0 拦截（根据用户要求）
+    if (insertData.code !== 0) {
+      throw new Error(`【飞书 API 拒绝插入内容】错误码: ${insertData.code}, 原因: ${insertData.msg}`);
+    }
+
     return {
       success: true,
       documentId: documentId,
       documentToken: documentToken,
       documentUrl: `https://your-workspace.feishu.cn/docx/${documentId}`,
-      message: '文档创建成功'
+      message: '文档创建并插入内容成功'
     };
   } catch (error) {
     console.error('创建飞书文档错误堆栈:', error.stack || error);

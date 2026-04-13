@@ -22,6 +22,8 @@ export default function JsonToFeishuPage() {
   // 验证状态
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifyError, setVerifyError] = useState("")
+  // 复制链接状态
+  const [isCopied, setIsCopied] = useState(false)
 
   useEffect(() => {
     // 从 localStorage 读取保存的凭证数据
@@ -70,6 +72,14 @@ export default function JsonToFeishuPage() {
       console.error('读取 localStorage 失败:', error);
     }
   }, [])
+
+  // 当设置弹窗打开且 appId/appSecret 变化时，更新弹窗内的临时状态
+  useEffect(() => {
+    if (showSettings) {
+      setTempAppId(appId)
+      setTempAppSecret(appSecret)
+    }
+  }, [showSettings, appId, appSecret])
 
   const handleInitialSubmit = () => {
     if (appId.trim() && appSecret.trim()) {
@@ -128,9 +138,50 @@ export default function JsonToFeishuPage() {
   }
 
   const handleOpenSettings = () => {
-    setTempAppId(appId)
-    setTempAppSecret(appSecret)
+    // 从 localStorage 读取最新的凭证，确保即使状态未更新也能获取最新值
+    let latestAppId = appId;
+    let latestAppSecret = appSecret;
+
+    try {
+      const savedCreds = localStorage.getItem('feishu_creds');
+      const savedAppId = localStorage.getItem('feishu_app_id');
+      const savedAppSecret = localStorage.getItem('feishu_app_secret');
+
+      if (savedCreds) {
+        try {
+          const creds = JSON.parse(savedCreds);
+          latestAppId = creds.appId || latestAppId;
+          latestAppSecret = creds.appSecret || latestAppSecret;
+        } catch (e) {
+          console.error('解析 feishu_creds 失败:', e);
+        }
+      }
+
+      // 如果没有 feishu_creds，使用单独的存储
+      if (!latestAppId && savedAppId) {
+        latestAppId = savedAppId;
+      }
+      if (!latestAppSecret && savedAppSecret) {
+        latestAppSecret = savedAppSecret;
+      }
+    } catch (error) {
+      console.error('读取 localStorage 失败:', error);
+    }
+
+    setTempAppId(latestAppId)
+    setTempAppSecret(latestAppSecret)
     setShowSettings(true)
+  }
+
+  const handleCopyLink = async () => {
+    if (!successLink) return;
+    try {
+      await navigator.clipboard.writeText(successLink);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 1500);
+    } catch (err) {
+      console.error('复制链接失败:', err);
+    }
   }
 
   const handleJsonSubmit = async () => {
@@ -138,6 +189,7 @@ export default function JsonToFeishuPage() {
     setIsSubmitting(true);
     setShowSuccess(false);
     setErrorMessage("");
+    setIsCopied(false);
 
     console.log(">>> 开始执行真实的 Axios 请求");
     // localStorage.removeItem('feishu_creds'); // 移除这行以保持凭证持久化
@@ -157,7 +209,7 @@ export default function JsonToFeishuPage() {
       }
 
       // 提取必要字段
-      const title = parsedData.title || "未命名文档";
+      const title = parsedData.title || parsedData.feishu_doc_title || "未命名文档";
       const folderToken = parsedData.folderToken || "";
 
       // 处理内容：优先使用blocks，其次使用content
@@ -310,7 +362,12 @@ export default function JsonToFeishuPage() {
           <div className="relative">
             <textarea
               value={jsonContent}
-              onChange={(e) => setJsonContent(e.target.value)}
+              onChange={(e) => {
+                setJsonContent(e.target.value);
+                setShowSuccess(false);
+                setSuccessLink("");
+                setIsCopied(false);
+              }}
               placeholder={`{
   "title": "文档标题",
   "content": "文档内容..."
@@ -368,6 +425,13 @@ export default function JsonToFeishuPage() {
                 >
                   点击查看文档
                 </a>
+                <span className="mx-2">·</span>
+                <button
+                  onClick={handleCopyLink}
+                  className="underline hover:opacity-80 focus:outline-none"
+                >
+                  {isCopied ? "已复制！" : "复制链接"}
+                </button>
               </p>
             </div>
           )}
