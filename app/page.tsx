@@ -24,24 +24,59 @@ export default function JsonToFeishuPage() {
   const [verifyError, setVerifyError] = useState("")
 
   useEffect(() => {
-    // 注释掉原有逻辑，强制显示配置页面
-    // const savedAppId = localStorage.getItem("feishu_app_id")
-    // const savedAppSecret = localStorage.getItem("feishu_app_secret")
-    // if (savedAppId && savedAppSecret) {
-    //   setAppId(savedAppId)
-    //   setAppSecret(savedAppSecret)
-    //   setIsConfigured(true)
-    // }
+    // 从 localStorage 读取保存的凭证数据
+    try {
+      const savedCreds = localStorage.getItem('feishu_creds');
+      const savedAppId = localStorage.getItem('feishu_app_id');
+      const savedAppSecret = localStorage.getItem('feishu_app_secret');
 
-    // 新增：清除所有凭证
-    localStorage.clear()
-    setIsConfigured(false)
+      let appIdToSet = '';
+      let appSecretToSet = '';
+      let folderTokenToSet = '';
+
+      // 优先使用 feishu_creds
+      if (savedCreds) {
+        try {
+          const creds = JSON.parse(savedCreds);
+          appIdToSet = creds.appId || '';
+          appSecretToSet = creds.appSecret || '';
+          folderTokenToSet = creds.folderToken || '';
+        } catch (e) {
+          console.error('解析 feishu_creds 失败:', e);
+        }
+      }
+
+      // 如果没有 feishu_creds，使用单独的存储
+      if (!appIdToSet && savedAppId) {
+        appIdToSet = savedAppId;
+      }
+      if (!appSecretToSet && savedAppSecret) {
+        appSecretToSet = savedAppSecret;
+      }
+
+      // 设置状态
+      if (appIdToSet) {
+        setAppId(appIdToSet);
+      }
+      if (appSecretToSet) {
+        setAppSecret(appSecretToSet);
+      }
+
+      // 如果凭证存在，标记为已配置
+      if (appIdToSet && appSecretToSet) {
+        setIsConfigured(true);
+      }
+    } catch (error) {
+      console.error('读取 localStorage 失败:', error);
+    }
   }, [])
 
   const handleInitialSubmit = () => {
     if (appId.trim() && appSecret.trim()) {
       localStorage.setItem("feishu_app_id", appId)
       localStorage.setItem("feishu_app_secret", appSecret)
+      // 同时保存到 feishu_creds 以便后续统一读取
+      localStorage.setItem('feishu_creds', JSON.stringify({ appId, appSecret }))
       setIsConfigured(true)
     }
   }
@@ -105,7 +140,7 @@ export default function JsonToFeishuPage() {
     setErrorMessage("");
 
     console.log(">>> 开始执行真实的 Axios 请求");
-    localStorage.removeItem('feishu_creds');
+    // localStorage.removeItem('feishu_creds'); // 移除这行以保持凭证持久化
 
     if (!jsonContent.trim()) {
       setIsSubmitting(false);
