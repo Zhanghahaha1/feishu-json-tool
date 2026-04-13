@@ -1,48 +1,42 @@
-## 核心任务：构建完美的富文本映射引擎并修复“假成功”漏洞
+## 核心任务：彻底重构 Feishu AST 展平解析引擎 (采用官方 `/descendant` 接口)
 
-### 1. 致命 Bug：掩盖 Step 2 报错
-- **现状**：Step 2 (批量插入 Blocks) 调用飞书 `/children` 接口时，由于结构不符合飞书要求，飞书实际上返回了错误。但后端代码忽略了该错误，直接给前端返回了成功，导致生成了大量只有标题的空文档！
-- **强制修复**：在 Step 2 的 fetch 响应后，**必须**加入以下严格的校验代码：
-  ```javascript
-  const insertData = await insertRes.json();
-  if (insertData.code !== 0) {
-    throw new Error(`【飞书 API 拒绝插入内容】错误码: ${insertData.code}, 原因: ${insertData.msg}`);
-  }
+### 1. 架构升级红线
+- **废弃接口**：严禁在插入内容时使用 `/children` 接口，它天然不支持嵌套，会引发 9499 错误。
+- **启用官方嵌套接口**：必须将 Step 2 的 API 端点更改为：
+  `POST /open-apis/docx/v1/documents/${document_id}/blocks/${document_id}/descendant`
 
-  2. 完美富文本映射 (禁止降级！)
-必须重写 normalizeBlock 函数，严格按照飞书官方格式输出，保留所有排版，绝不降级为纯文本。
+### 2. 核心算法重构：AST 展平 (Flattening)
+`/descendant` 接口的请求体必须是“展平”的。你必须在 `app/api/feishu/route.ts` 中编写一个 `flattenBlocks` 函数。
+**数据结构规范如下（必须严格遵守）：**
+1. 为前端传来的每个独立内容（含嵌套的单元格）生成唯一的临时 `block_id`（可以使用 `Math.random().toString(36).substr(2, 9)` 或类似机制）。
+2. 构建平铺数组：所有生成的 Block 对象必须全部推进一个名为 `descendants` 的一维数组中。
+3. 建立父子指针：对于表格这种容器节点，必须在父节点添加 `children: ["子节点id_1", "子节点id_2"]`，而子节点自身必须存在于 `descendants` 数组中。
+4. **最终发给飞书的 payload 结构必须是：**
+   ```javascript
+   {
+     "index": -1,
+     "children_id": ["root_id_1", "root_id_2"], // 这里只存放最外层根节点的 ID
+     "descendants": [ // 这里存放所有节点（包含父节点和子节点）的完整数据
+        { "block_id": "root_id_1", "block_type": 2, "text": {...} },
+        { "block_id": "root_id_2", "block_type": 31, "table": {...}, "children": ["cell_id_1"] },
+        { "block_id": "cell_id_1", "block_type": 32, "table_cell": {}, "children": ["text_id_1"] },
+        { "block_id": "text_id_1", "block_type": 2, "text": {...} }
+     ]
+   }
 
-请直接复制并使用以下 normalizeBlock 逻辑（我已经为你写好了最标准的飞书 AST 字典）：
-function normalizeBlock(block) {
-  const content = block.text || block.content || '';
-  // 飞书底层标准 text_run 结构
-  const baseElements = [{ "text_run": { "content": content } }];
+   3. 精准排版解析规范 (不妥协原则)
+原生表格解析 (Markdown Table)：
+遇到包含 | 的 Markdown 表格内容，必须解析为 table (31) -> table_cell (32) -> text (2) 的三层级关联。
+极其重要：必须计算出准确的 row_size 和 column_size，且生成的 table_cell 数量必须等于 row_size * column_size，空单元格也要生成对应的空 table_cell 节点，否则飞书会拒绝接收！
 
-  switch (block.type) {
-    case 'heading1':
-    case 'h1':
-      return { "block_type": 3, "heading1": { "elements": baseElements } };
-    case 'heading2':
-    case 'h2':
-      return { "block_type": 4, "heading2": { "elements": baseElements } };
-    case 'heading3':
-    case 'h3':
-      return { "block_type": 5, "heading3": { "elements": baseElements } };
-    case 'bullet':
-      return { "block_type": 12, "bullet": { "elements": baseElements } };
-    case 'quote':
-      return { "block_type": 15, "quote": { "elements": baseElements } };
-    case 'code':
-      return { "block_type": 14, "code": { "elements": baseElements } };
-    case 'text':
-    case 'paragraph':
-    default:
-      // 未知格式兜底为正文，但内容绝不丢失
-      return { "block_type": 2, "text": { "elements": baseElements } };
-  }
-}
+极客风代码块兜底 (Code Block)：
+遇到 Mermaid 流程图源码、Nano Banana 提示词（Prompt）、或是解析失败的异形内容，全部封装进 block_type: 14 (代码块) 中渲染，保留等宽字体和灰底的高级排版。
 
-3. 禁止事项
-严禁忽略飞书的内部 code 报错。
+基础文本：Heading (3-11), Bullet (12), Quote (15) 等保持标准文本元素封装不变。
 
-严禁修改前端 app/page.tsx。
+4. 强制拦截与打印
+在请求发给飞书前，console.log 打印出 children_id.length 和 descendants.length 供调试。
+
+必须保留 data.code !== 0 的严格报错拦截，将飞书的错误原因直接 throw 出去。
+
+严禁改UI！

@@ -1,31 +1,37 @@
-## 核心任务：彻底修正 Block 映射结构（消灭 Claude 幻觉）
-
-### 1. 致命错误剖析
-- **你之前的转换逻辑全错**：你在 `normalizeBlock` 中输出的格式（如 `"type": "heading"`, `"textRun"` 驼峰命名等）**根本不是飞书 docx/v1 API 的标准格式**！飞书 API 收到这种自创格式会直接静默丢弃，导致文档内容为空。
-
-### 2. 强制执行官方 API 映射字典 (app/api/feishu/route.ts)
-请立即重写 `normalizeBlock` 函数，**必须 100% 严格**按照以下结构进行输出，**绝对不允许使用驼峰命名（必须是 text_run，不能是 textRun），绝对不允许漏掉 block_type**：
-
-- **正文文本 (type: "text")**
-  返回：`{ "block_type": 2, "text": { "elements": [{ "text_run": { "content": block.text || block.content } }] } }`
-
-- **一级标题 (type: "heading1")**
-  返回：`{ "block_type": 3, "heading1": { "elements": [{ "text_run": { "content": block.text || block.content } }] } }`
-
-- **二级标题 (type: "heading2")**
-  返回：`{ "block_type": 4, "heading2": { "elements": [{ "text_run": { "content": block.text || block.content } }] } }`
-
-- **三级标题 (type: "heading3")**
-  返回：`{ "block_type": 5, "heading3": { "elements": [{ "text_run": { "content": block.text || block.content } }] } }`
-
-- **无序列表 (type: "bullet")**
-  返回：`{ "block_type": 11, "bullet": { "elements": [{ "text_run": { "content": block.text || block.content } }] } }`
-
-- **引用区块 (type: "quote")**
-  返回：`{ "block_type": 17, "quote": { "elements": [{ "text_run": { "content": block.text || block.content } }] } }`
-
-### 3. 禁止事项
-- 严禁擅自增加外层的 `"type": "xxx"` 字段，飞书只认 `"block_type": 数字`。
-- 严禁使用 `textRun`，必须是 `text_run`！
-- 保持前端代码和“两步走”架构不变。
-- 严禁修改UI。
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": true,
+    "incremental": true,
+    "module": "esnext",
+    "esModuleInterop": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts",
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
