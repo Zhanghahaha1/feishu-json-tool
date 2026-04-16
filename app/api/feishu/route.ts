@@ -141,7 +141,92 @@ async function getFeishuAccessToken(appId: string, appSecret: string): Promise<s
   return data.tenant_access_token;
 }
 
-async function createFeishuDocument(accessToken: string, spaceId: string, title: string, content: any): Promise<any> {
+// 通过手机号获取用户 Open ID
+async function getUserOpenIdByPhone(accessToken: string, phoneNumber: string): Promise<string> {
+  try {
+    const response = await fetch(`${FEISHU_BASE_URL}/contact/v3/users/batch_get_id`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        mobiles: [phoneNumber]
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.code !== 0) {
+      console.error('通过手机号获取用户OpenID失败:', data);
+      throw new Error(`获取用户OpenID失败: ${data.msg}`);
+    }
+
+    // 提取用户ID
+    const userList = data.data?.user_list || [];
+    if (userList.length === 0) {
+      throw new Error('未找到与该手机号关联的飞书用户');
+    }
+
+    const user = userList[0];
+    const openId = user.user_id || user.open_id;
+
+    if (!openId) {
+      throw new Error('用户OpenID为空');
+    }
+
+    return openId;
+  } catch (error) {
+    console.error('获取用户OpenID时出错:', error);
+    throw error;
+  }
+}
+
+// 授予文档权限
+async function grantDocumentPermission(
+  accessToken: string,
+  documentId: string,
+  openId: string,
+  perm: string = 'full_access'
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${FEISHU_BASE_URL}/drive/v1/permissions/${documentId}/members?type=docx`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          member_type: 'openid',
+          member_id: openId,
+          perm: perm
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.code !== 0) {
+      console.error('授予文档权限失败:', data);
+      throw new Error(`授予权限失败: ${data.msg}`);
+    }
+
+    console.log(`文档权限授予成功: documentId=${documentId}, openId=${openId}`);
+  } catch (error) {
+    console.error('授予文档权限时出错:', error);
+    throw error;
+  }
+}
+
+async function createFeishuDocument(
+  accessToken: string,
+  spaceId: string,
+  title: string,
+  content: any,
+  phoneNumber?: string
+): Promise<any> {
   // Step 1: 创建空文档
   const createPayload: any = {
     title: title,
@@ -160,12 +245,12 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
 
   const createData = await createResponse.json();
   if (createData.code !== 0) throw new Error(`创建文档失败: ${createData.msg}`);
-  
+
   const documentId = createData.data.document.document_id;
 
   // Step 2: 展平数据结构并调用 /descendant 接口插入内容
   const { rootIds, descendantsArray } = buildFlatAST(content);
-  
+
   console.log('>>> 发往飞书的 payload 节点数:', { 根节点: rootIds.length, 总节点: descendantsArray.length });
 
   const insertRes = await fetch(`${FEISHU_BASE_URL}/docx/v1/documents/${documentId}/blocks/${documentId}/descendant`, {
@@ -182,16 +267,36 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
   });
 
   const insertData = await insertRes.json();
-  
+
   if (insertData.code !== 0) {
     throw new Error(`【飞书拒收格式】错误码: ${insertData.code}, 原因: ${insertData.msg}`);
+  }
+
+  // Step 3: 如果提供了手机号，自动为用户授予文档管理权限
+  let permissionGranted = false;
+  let permissionError = null;
+
+  if (phoneNumber && phoneNumber.trim() !== '') {
+    try {
+      console.log(`>>> 开始为手机号 ${phoneNumber} 用户授予文档管理权限`);
+      const openId = await getUserOpenIdByPhone(accessToken, phoneNumber.trim());
+      await grantDocumentPermission(accessToken, documentId, openId, 'full_access');
+      permissionGranted = true;
+      console.log(`>>> 文档权限授予成功: documentId=${documentId}, openId=${openId}`);
+    } catch (error: any) {
+      permissionError = error.message;
+      console.error(`>>> 文档权限授予失败，文档仍可访问:`, error.message);
+      // 权限授予失败不影响文档创建成功，但记录错误
+    }
   }
 
   return {
     success: true,
     documentId: documentId,
     documentUrl: `https://feishu.cn/docx/${documentId}`, // 这里可以替换成你们公司的具体域名
-    message: '文档创建并排版成功'
+    message: '文档创建并排版成功',
+    permissionGranted,
+    permissionError
   };
 }
 
@@ -202,7 +307,16 @@ async function createFeishuDocument(accessToken: string, spaceId: string, title:
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { appId, appSecret, title, blocks, folderToken, folder_token, spaceId: spaceIdFromBody } = body;
+    const {
+      appId,
+      appSecret,
+      title,
+      blocks,
+      folderToken,
+      folder_token,
+      spaceId: spaceIdFromBody,
+      phoneNumber
+    } = body;
 
     if (!appId || !appSecret || !title || !blocks) {
       return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
@@ -215,7 +329,7 @@ export async function POST(request: NextRequest) {
     else if (spaceIdFromBody) spaceId = String(spaceIdFromBody).trim();
 
     const accessToken = await getFeishuAccessToken(appId, appSecret);
-    const result = await createFeishuDocument(accessToken, spaceId, finalTitle, blocks);
+    const result = await createFeishuDocument(accessToken, spaceId, finalTitle, blocks, phoneNumber);
 
     return NextResponse.json({
       success: true,

@@ -9,6 +9,7 @@ export default function JsonToFeishuPage() {
   const [isConfigured, setIsConfigured] = useState(false)
   const [appId, setAppId] = useState("")
   const [appSecret, setAppSecret] = useState("")
+  const [phoneNumber, setPhoneNumber] = useState("")
   const [jsonContent, setJsonContent] = useState("")
   const [showSettings, setShowSettings] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -19,6 +20,7 @@ export default function JsonToFeishuPage() {
   // 临时存储设置弹窗中的值
   const [tempAppId, setTempAppId] = useState("")
   const [tempAppSecret, setTempAppSecret] = useState("")
+  const [tempPhoneNumber, setTempPhoneNumber] = useState("")
   // 验证状态
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifyError, setVerifyError] = useState("")
@@ -31,9 +33,11 @@ export default function JsonToFeishuPage() {
       const savedCreds = localStorage.getItem('feishu_creds');
       const savedAppId = localStorage.getItem('feishu_app_id');
       const savedAppSecret = localStorage.getItem('feishu_app_secret');
+      const savedPhoneNumber = localStorage.getItem('feishu_phone_number');
 
       let appIdToSet = '';
       let appSecretToSet = '';
+      let phoneNumberToSet = '';
       let folderTokenToSet = '';
 
       // 优先使用 feishu_creds
@@ -42,6 +46,7 @@ export default function JsonToFeishuPage() {
           const creds = JSON.parse(savedCreds);
           appIdToSet = creds.appId || '';
           appSecretToSet = creds.appSecret || '';
+          phoneNumberToSet = creds.phoneNumber || '';
           folderTokenToSet = creds.folderToken || '';
         } catch (e) {
           console.error('解析 feishu_creds 失败:', e);
@@ -55,6 +60,9 @@ export default function JsonToFeishuPage() {
       if (!appSecretToSet && savedAppSecret) {
         appSecretToSet = savedAppSecret;
       }
+      if (!phoneNumberToSet && savedPhoneNumber) {
+        phoneNumberToSet = savedPhoneNumber;
+      }
 
       // 设置状态
       if (appIdToSet) {
@@ -62,6 +70,9 @@ export default function JsonToFeishuPage() {
       }
       if (appSecretToSet) {
         setAppSecret(appSecretToSet);
+      }
+      if (phoneNumberToSet) {
+        setPhoneNumber(phoneNumberToSet);
       }
 
       // 如果凭证存在，标记为已配置
@@ -73,26 +84,28 @@ export default function JsonToFeishuPage() {
     }
   }, [])
 
-  // 当设置弹窗打开且 appId/appSecret 变化时，更新弹窗内的临时状态
+  // 当设置弹窗打开且 appId/appSecret/phoneNumber 变化时，更新弹窗内的临时状态
   useEffect(() => {
     if (showSettings) {
       setTempAppId(appId)
       setTempAppSecret(appSecret)
+      setTempPhoneNumber(phoneNumber)
     }
-  }, [showSettings, appId, appSecret])
+  }, [showSettings, appId, appSecret, phoneNumber])
 
   const handleInitialSubmit = () => {
-    if (appId.trim() && appSecret.trim()) {
+    if (appId.trim() && appSecret.trim() && phoneNumber.trim()) {
       localStorage.setItem("feishu_app_id", appId)
       localStorage.setItem("feishu_app_secret", appSecret)
+      localStorage.setItem("feishu_phone_number", phoneNumber)
       // 同时保存到 feishu_creds 以便后续统一读取
-      localStorage.setItem('feishu_creds', JSON.stringify({ appId, appSecret }))
+      localStorage.setItem('feishu_creds', JSON.stringify({ appId, appSecret, phoneNumber }))
       setIsConfigured(true)
     }
   }
 
   const handleSettingsReset = async () => {
-    if (!tempAppId.trim() || !tempAppSecret.trim()) {
+    if (!tempAppId.trim() || !tempAppSecret.trim() || !tempPhoneNumber.trim()) {
       return
     }
 
@@ -114,12 +127,19 @@ export default function JsonToFeishuPage() {
         // 验证成功，保存配置并关闭弹窗
         setAppId(tempAppId)
         setAppSecret(tempAppSecret)
+        setPhoneNumber(tempPhoneNumber)
         localStorage.setItem("feishu_app_id", tempAppId)
         localStorage.setItem("feishu_app_secret", tempAppSecret)
-        localStorage.setItem('feishu_creds', JSON.stringify({ appId: tempAppId, appSecret: tempAppSecret }))
+        localStorage.setItem("feishu_phone_number", tempPhoneNumber)
+        localStorage.setItem('feishu_creds', JSON.stringify({
+          appId: tempAppId,
+          appSecret: tempAppSecret,
+          phoneNumber: tempPhoneNumber
+        }))
         setShowSettings(false)
         setTempAppId("")
         setTempAppSecret("")
+        setTempPhoneNumber("")
         // 可以在这里添加成功Toast，但UI已存档，暂用alert
         toast.success("凭证验证成功，配置已保存")
       } else {
@@ -141,17 +161,20 @@ export default function JsonToFeishuPage() {
     // 从 localStorage 读取最新的凭证，确保即使状态未更新也能获取最新值
     let latestAppId = appId;
     let latestAppSecret = appSecret;
+    let latestPhoneNumber = phoneNumber;
 
     try {
       const savedCreds = localStorage.getItem('feishu_creds');
       const savedAppId = localStorage.getItem('feishu_app_id');
       const savedAppSecret = localStorage.getItem('feishu_app_secret');
+      const savedPhoneNumber = localStorage.getItem('feishu_phone_number');
 
       if (savedCreds) {
         try {
           const creds = JSON.parse(savedCreds);
           latestAppId = creds.appId || latestAppId;
           latestAppSecret = creds.appSecret || latestAppSecret;
+          latestPhoneNumber = creds.phoneNumber || latestPhoneNumber;
         } catch (e) {
           console.error('解析 feishu_creds 失败:', e);
         }
@@ -164,12 +187,16 @@ export default function JsonToFeishuPage() {
       if (!latestAppSecret && savedAppSecret) {
         latestAppSecret = savedAppSecret;
       }
+      if (!latestPhoneNumber && savedPhoneNumber) {
+        latestPhoneNumber = savedPhoneNumber;
+      }
     } catch (error) {
       console.error('读取 localStorage 失败:', error);
     }
 
     setTempAppId(latestAppId)
     setTempAppSecret(latestAppSecret)
+    setTempPhoneNumber(latestPhoneNumber)
     setShowSettings(true)
   }
 
@@ -230,12 +257,15 @@ export default function JsonToFeishuPage() {
 
       // 2. 从本地缓存获取最新的凭证（防止 State 没更新）
       const savedCreds = JSON.parse(localStorage.getItem('feishu_creds') || '{}');
+      const savedPhoneNumber = localStorage.getItem('feishu_phone_number');
       const finalAppId = appId || savedCreds.appId;
       const finalAppSecret = appSecret || savedCreds.appSecret;
+      const finalPhoneNumber = phoneNumber || savedCreds.phoneNumber || savedPhoneNumber || '';
 
       const res = await axios.post('/api/feishu', {
         appId: finalAppId,
         appSecret: finalAppSecret,
+        phoneNumber: finalPhoneNumber,
         folderToken,
         title,
         blocks
@@ -306,9 +336,25 @@ export default function JsonToFeishuPage() {
               />
             </div>
 
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                手机号（用于自动获取编辑权限）
+              </label>
+              <input
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="请输入您的飞书账号绑定的手机号"
+                className="w-full h-12 px-4 rounded-xl bg-card border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-foreground/20 transition-all"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                填入您的飞书账号绑定的手机号，生成后您将自动获得该文档的编辑权限。
+              </p>
+            </div>
+
             <button
               onClick={handleInitialSubmit}
-              disabled={!appId.trim() || !appSecret.trim()}
+              disabled={!appId.trim() || !appSecret.trim() || !phoneNumber.trim()}
               className="w-full h-12 mt-6 rounded-xl bg-gradient-to-r from-foreground via-foreground/90 to-foreground text-background font-medium text-sm transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               完成配置
@@ -502,6 +548,22 @@ export default function JsonToFeishuPage() {
                   className="w-full h-11 px-4 rounded-xl bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-foreground/20 transition-all"
                 />
               </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  手机号（用于自动获取编辑权限）
+                </label>
+                <input
+                  type="tel"
+                  value={tempPhoneNumber}
+                  onChange={(e) => setTempPhoneNumber(e.target.value)}
+                  placeholder="请输入您的飞书账号绑定的手机号"
+                  className="w-full h-11 px-4 rounded-xl bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-foreground/20 transition-all"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  填入您的飞书账号绑定的手机号，生成后您将自动获得该文档的编辑权限。
+                </p>
+              </div>
             </div>
 
             {/* 验证错误提示 */}
@@ -524,7 +586,7 @@ export default function JsonToFeishuPage() {
               </button>
               <button
                 onClick={handleSettingsReset}
-                disabled={!tempAppId.trim() || !tempAppSecret.trim() || isVerifying}
+                disabled={!tempAppId.trim() || !tempAppSecret.trim() || !tempPhoneNumber.trim() || isVerifying}
                 className="flex-1 h-11 rounded-xl bg-gradient-to-r from-foreground to-foreground/90 text-background font-medium text-sm transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isVerifying ? (
