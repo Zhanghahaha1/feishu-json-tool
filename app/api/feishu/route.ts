@@ -182,7 +182,7 @@ async function getUserOpenIdByPhone(accessToken: string, phoneNumber: string): P
   }
 }
 
-// 授予文档权限
+// 授予文档权限 (通过 openid)
 async function grantDocumentPermission(
   accessToken: string,
   documentId: string,
@@ -220,11 +220,50 @@ async function grantDocumentPermission(
   }
 }
 
+// 授予文档权限 (通过 email)
+async function grantDocumentPermissionByEmail(
+  accessToken: string,
+  documentId: string,
+  email: string,
+  perm: string = 'full_access'
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${FEISHU_BASE_URL}/drive/v1/permissions/${documentId}/members?type=docx`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          member_type: 'email',
+          member_id: email,
+          perm: perm
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.code !== 0) {
+      console.error('通过邮箱授予文档权限失败:', data);
+      throw new Error(`通过邮箱授予权限失败: ${data.msg}`);
+    }
+
+    console.log(`文档权限授予成功 (邮箱): documentId=${documentId}, email=${email}`);
+  } catch (error) {
+    console.error('通过邮箱授予文档权限时出错:', error);
+    throw error;
+  }
+}
+
 async function createFeishuDocument(
   accessToken: string,
   spaceId: string,
   title: string,
   content: any,
+  email?: string,
   phoneNumber?: string
 ): Promise<any> {
   // Step 1: 创建空文档
@@ -272,11 +311,25 @@ async function createFeishuDocument(
     throw new Error(`【飞书拒收格式】错误码: ${insertData.code}, 原因: ${insertData.msg}`);
   }
 
-  // Step 3: 如果提供了手机号，自动为用户授予文档管理权限
+  // Step 3: 如果提供了邮箱或手机号，自动为用户授予文档管理权限
   let permissionGranted = false;
   let permissionError = null;
 
-  if (phoneNumber && phoneNumber.trim() !== '') {
+  // 优先使用邮箱授权
+  if (email && email.trim() !== '') {
+    try {
+      console.log(`>>> 开始为邮箱 ${email} 用户授予文档管理权限`);
+      await grantDocumentPermissionByEmail(accessToken, documentId, email.trim(), 'full_access');
+      permissionGranted = true;
+      console.log(`>>> 文档权限授予成功 (邮箱): documentId=${documentId}, email=${email}`);
+    } catch (error: any) {
+      permissionError = error.message;
+      console.error(`>>> 邮箱权限授予失败，文档仍可访问:`, error.message);
+      // 权限授予失败不影响文档创建成功，但记录错误
+    }
+  }
+  // 如果邮箱不存在或授权失败，尝试使用手机号授权
+  else if (phoneNumber && phoneNumber.trim() !== '') {
     try {
       console.log(`>>> 开始为手机号 ${phoneNumber} 用户授予文档管理权限`);
       const openId = await getUserOpenIdByPhone(accessToken, phoneNumber.trim());
@@ -285,7 +338,7 @@ async function createFeishuDocument(
       console.log(`>>> 文档权限授予成功: documentId=${documentId}, openId=${openId}`);
     } catch (error: any) {
       permissionError = error.message;
-      console.error(`>>> 文档权限授予失败，文档仍可访问:`, error.message);
+      console.error(`>>> 手机号权限授予失败，文档仍可访问:`, error.message);
       // 权限授予失败不影响文档创建成功，但记录错误
     }
   }
@@ -315,6 +368,7 @@ export async function POST(request: NextRequest) {
       folderToken,
       folder_token,
       spaceId: spaceIdFromBody,
+      email,
       phoneNumber
     } = body;
 
@@ -329,7 +383,7 @@ export async function POST(request: NextRequest) {
     else if (spaceIdFromBody) spaceId = String(spaceIdFromBody).trim();
 
     const accessToken = await getFeishuAccessToken(appId, appSecret);
-    const result = await createFeishuDocument(accessToken, spaceId, finalTitle, blocks, phoneNumber);
+    const result = await createFeishuDocument(accessToken, spaceId, finalTitle, blocks, email, phoneNumber);
 
     return NextResponse.json({
       success: true,

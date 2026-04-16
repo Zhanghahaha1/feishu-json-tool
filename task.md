@@ -1,33 +1,29 @@
-## 核心任务：实现创建后自动赋权，彻底解决用户无法编辑的问题
+核心任务：紧急修复 app/page.tsx 的断头代码与水合错误 (Hydration Error)
 
-### 1. 业务逻辑变更 (必须执行)
-- **放弃手动模式**：不再强求用户提供 `folderToken`。如果提供了则使用，如果不提供，文档将创建在机器人根目录，但必须通过 API 自动将当前用户设为管理员。
-- **获取当前用户**：为了精准赋权，我们需要用户的 `email` 或 `open_id`。
-  *(考虑到 MVP 易用性：请在后端逻辑中增加一个变量 `ADMIN_EMAIL`，暂时由用户在前端设置中填写自己的飞书邮箱)*
+背景诊断：由于上一次任务因上下文超限中断，app/page.tsx 目前处于代码残缺状态。同时，设置弹窗触发了 Next.js 的 Hydration 错误（由于在 SSR 阶段直接使用了本地存储状态）。
 
-### 2. 后端重构要求 (app/api/feishu/route.ts)
-在文档插入内容 (`/descendant`) 成功后，立即增加一个 Step 3：
+UI 修复 (严格对齐设计)：
 
-- **API 动作**：调用飞书权限更新接口：
-  `POST /open-apis/drive/v1/permissions/${document_id}/members?type=docx`
-- **请求参数**：
-  ```json
-  {
-    "member_type": "email",
-    "member_id": "${ADMIN_EMAIL}",
-    "perm": "full_access" // 赋予最高权限：管理者
-  }
+彻底移除邮箱输入相关逻辑。
 
-  关键点：必须确保这个请求在文档创建成功后立即执行。即使赋权失败，也不要影响文档链接的返回，但在日志里记录失败原因。
+在设置弹窗中，只保留 “飞书绑定手机号 (Phone Number)” 的输入框。
 
-3. 前端交互优化 (app/page.tsx)
-UI 调整：将之前的“保存位置(Folder Token)”输入框改为“你的飞书邮箱 (用于自动获取编辑权限)”。
+恢复 app/page.tsx 的完整结构，确保没有任何未闭合的标签或截断的函数。
 
-本地记忆：同样使用 localStorage 记住这个邮箱，默认保留上次填写的。
+修复水合错误 (必做)：
 
-说明文字：提示用户：“填入你的飞书账号邮箱，生成后你将自动获得该文档的编辑权限。”
+在 app/page.tsx 中引入 mounted 状态。
 
-4. 严谨性要求
-不准改坏解析引擎：之前的 AST 展平算法（Table/CodeBlock）已经完美，严禁触碰那部分逻辑！
+使用 useEffect 在组件挂载后将 mounted 设为 true。
 
-只允许新增：在 createFeishuDocument 函数的末尾增加赋权逻辑。
+只有当 mounted 为 true 时，才允许渲染包含 localStorage 数据的设置面板或表单项。这能彻底解决 image_a43428.png 中的报错。
+
+后端连接性：确保后端 app/api/feishu/route.ts 依然能够正确接收前端传来的 phoneNumber。
+
+部署保底：
+
+检查并确保 next.config.ts 中的 ignoreBuildErrors: true 依然存在，确保能绕过 Vercel 报错。
+
+红线要求：
+
+禁止触碰 任何关于 Markdown 表格解析、AST 展平或飞书文档插入的业务逻辑代码！
