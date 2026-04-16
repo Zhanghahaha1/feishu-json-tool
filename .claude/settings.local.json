@@ -12,7 +12,12 @@
       "Bash(lsof:*)",
       "Bash(kill:*)",
       "Bash(npx tsc:*)",
-      "Bash(pkill -f \"next dev\")"
+      "Bash(pkill -f \"next dev\")",
+      "Bash(git remote:*)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
